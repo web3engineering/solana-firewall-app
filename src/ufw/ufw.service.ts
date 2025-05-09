@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { ConfigService } from '@nestjs/config';
 
 const execAsync = promisify(exec);
 
@@ -14,7 +15,21 @@ export interface UfwRule {
 @Injectable()
 export class UfwService {
   private readonly logger = new Logger(UfwService.name);
-  private readonly targetPorts = ['8899', '10000', '11000', '20000'];
+  private readonly targetPorts: string[];
+
+  constructor(private readonly configService: ConfigService) {
+    const geyserPortEnv = this.configService.get<string>('GEYSER_PORT');
+    const rpcPortEnv = this.configService.get<string>('RPC_PORT');
+
+    if (!geyserPortEnv || !rpcPortEnv) {
+      const errorMessage = 'GEYSER_PORT and/or RPC_PORT environment variables are not set for UfwService.';
+      this.logger.error(errorMessage);
+      this.targetPorts = [];
+    } else {
+      this.targetPorts = [geyserPortEnv, rpcPortEnv]; // Order matters if we index later, but we'll fetch by name in checkIpAccess
+    }
+    this.logger.log(`UfwService initialized. Configured target ports for general ops: ${this.targetPorts.join(', ')}`);
+  }
 
   // Helper to run UFW commands
   private async runUfwCommand(command: string): Promise<{ stdout: string; stderr: string }> {
@@ -36,6 +51,10 @@ export class UfwService {
   }
 
   async getRules(): Promise<UfwRule[]> {
+    if (this.targetPorts.length === 0) {
+        this.logger.warn('No target ports configured. getRules will return an empty array.');
+        return [];
+    }
     const { stdout } = await this.runUfwCommand('ufw status numbered');
     const lines = stdout.split('\n');
     const rules: UfwRule[] = [];
@@ -86,6 +105,9 @@ export class UfwService {
   }
 
   async addRule(ip: string, port: string): Promise<void> {
+    if (this.targetPorts.length === 0) {
+        throw new Error('No target ports configured. Cannot add rule.');
+    }
     if (!this.targetPorts.includes(port)) {
         throw new Error(`Port ${port} is not a target port.`);
     }
@@ -95,6 +117,10 @@ export class UfwService {
   }
 
   async addRulesForIp(ip: string): Promise<void> {
+    if (this.targetPorts.length === 0) {
+        this.logger.warn('No target ports configured. Cannot add rules for IP.');
+        return;
+    }
     for (const port of this.targetPorts) {
         // Check if rule already exists might be good, but ufw handles duplicates gracefully (usually)
         await this.runUfwCommand(`ufw allow from ${ip} to any port ${port}`);
@@ -103,6 +129,9 @@ export class UfwService {
   }
 
   async deleteRule(ip: string, port: string): Promise<void> {
+    if (this.targetPorts.length === 0) {
+        throw new Error('No target ports configured. Cannot delete rule.');
+    }
     if (!this.targetPorts.includes(port)) {
         throw new Error(`Port ${port} is not a target port.`);
     }
@@ -112,6 +141,10 @@ export class UfwService {
   }
 
   async deleteRulesForIp(ip: string): Promise<void> {
+    if (this.targetPorts.length === 0) {
+        this.logger.warn('No target ports configured. Cannot delete rules for IP.');
+        return;
+    }
     for (const port of this.targetPorts) {
         await this.runUfwCommand(`ufw delete allow from ${ip} to any port ${port}`);
     }
@@ -119,5 +152,64 @@ export class UfwService {
     // `ufw --force delete ...` might be needed if it prompts.
     // Also, deleting a non-existent rule is usually fine.
     this.logger.log(`All target port rules deleted for IP: ${ip}`);
+  }
+
+  async checkIpAccess(ipToCheck: string): Promise<{
+    ip: string;
+    rpcPort: string;
+    geyserPort: string;
+    rpcPortAccess: boolean;
+    geyserPortAccess: boolean;
+  }> {
+    const rpcPort = this.configService.get<string>('RPC_PORT');
+    const geyserPort = this.configService.get<string>('GEYSER_PORT');
+
+    if (!rpcPort || !geyserPort) {
+      this.logger.error('RPC_PORT or GEYSER_PORT not configured for checkIpAccess');
+      throw new InternalServerErrorException('Server configuration error: Target ports not set.');
+    }
+
+    this.logger.log(`Checking UFW access for IP: ${ipToCheck} on RPC Port: ${rpcPort}, Geyser Port: ${geyserPort}`);
+
+    let rpcPortAccess = false;
+    let geyserPortAccess = false;
+
+    try {
+      const { stdout } = await this.runUfwCommand('ufw status numbered');
+      const lines = stdout.split('\n');
+      const ruleRegex = /^\[\s*\d+\]\s+(\S+)\s+ALLOW IN\s+(\S+)/i; // Simplified: only care about port, action, IP
+
+      for (const line of lines) {
+        const match = line.match(ruleRegex);
+        if (match) {
+          let portPart = match[1].split('/')[0]; // Normalize port (e.g., '80/tcp' -> '80')
+          const allowedIp = match[2];
+
+          if (allowedIp.toLowerCase() === ipToCheck.toLowerCase()) {
+            if (portPart === rpcPort) {
+              rpcPortAccess = true;
+            }
+            if (portPart === geyserPort) {
+              geyserPortAccess = true;
+            }
+          }
+        }
+        // Optimization: if both found, can break early
+        if (rpcPortAccess && geyserPortAccess) break;
+      }
+    } catch (error) {
+      this.logger.error(`Error checking IP access for ${ipToCheck}: ${error.message}`, error.stack);
+      // Depending on policy, might rethrow or return false for access
+      throw new InternalServerErrorException('Failed to check UFW status.');
+    }
+    
+    this.logger.log(`Access for ${ipToCheck} - RPC (${rpcPort}): ${rpcPortAccess}, Geyser (${geyserPort}): ${geyserPortAccess}`);
+    return {
+      ip: ipToCheck,
+      rpcPort,
+      geyserPort,
+      rpcPortAccess,
+      geyserPortAccess,
+    };
   }
 }
