@@ -82,7 +82,7 @@ export class UfwService {
         const ip = match[4];
 
         // Normalize port (remove /tcp or /udp if present)
-        if (!portPart.endsWith('/tcp')) continue;
+        if (portPart.indexOf('/') > 0 && !portPart.endsWith('/tcp')) continue;
         portPart = portPart.split('/')[0];
 
         if (this.targetPorts.includes(portPart) && ip !== 'Anywhere' && ip !== 'Anywhere (v6)') {
