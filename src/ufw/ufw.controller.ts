@@ -2,17 +2,28 @@ import { Controller, Get, Post, Body, Res, UseGuards, Render, Param, BadRequestE
 import { UfwService } from './ufw.service';
 import { AuthGuard } from '../auth/auth.guard'; // Adjust path as necessary
 import { Response } from 'express';
+import { ConfigService } from '@nestjs/config'; // Import ConfigService
 
 @Controller('rules')
 @UseGuards(AuthGuard) // Protect all routes in this controller
 export class UfwController {
-  constructor(private readonly ufwService: UfwService) {}
+  constructor(
+    private readonly ufwService: UfwService,
+    private readonly configService: ConfigService, // Inject ConfigService
+  ) {}
 
   @Get()
   @Render('rules/index') // Will render views/rules/index.hbs
   async getRulesPage() {
     const rules = await this.ufwService.getRules();
-    return { rules: rules, pageTitle: 'UFW Rules Management' };
+    const rpcPort = this.configService.get<string>('RPC_PORT');
+    const geyserPort = this.configService.get<string>('GEYSER_PORT');
+    return {
+      rules: rules,
+      pageTitle: 'UFW Rules Management',
+      rpcPort: rpcPort,
+      geyserPort: geyserPort,
+    };
   }
 
   @Post('add')

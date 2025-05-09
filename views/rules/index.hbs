@@ -28,7 +28,7 @@
             <div class="alert alert-danger">{{error}}</div>
         {{/if}}
 
-        <h2>Allowed IPs (Accessing Ports 8899 & 11000)</h2>
+        <h2>Allowed IPs (Accessing Ports {{rpcPort}} & {{geyserPort}})</h2>
         {{#if rules.length}}
             <table>
                 <thead>
@@ -54,7 +54,7 @@
                 </tbody>
             </table>
         {{else}}
-            <p>No IPs currently have access to both ports 8899 and 11000.</p>
+            <p>No IPs currently have access to both ports {{rpcPort}} and {{geyserPort}}.</p>
         {{/if}}
 
         <h2>Add New IP Rule</h2>
