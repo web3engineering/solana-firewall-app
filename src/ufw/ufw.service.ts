@@ -71,7 +71,7 @@ export class UfwService {
     // Let's try a broader approach first and then filter.
 
     // This regex captures the rule number, port, action, and IP if present
-    const ruleRegex = /^\[\s*(\d+)\]\s+(\S+)\s+(ALLOW IN)\s+(\S+)/i;
+    const ruleRegex = /^\[\s*(\d+)\]\s+(\S+)(?: on \S+)?\s+(ALLOW IN)\s+(\S+)/i;
 
     for (const line of lines) {
       const match = line.match(ruleRegex);
@@ -82,6 +82,7 @@ export class UfwService {
         const ip = match[4];
 
         // Normalize port (remove /tcp or /udp if present)
+        if (!portPart.endsWith('/tcp')) continue;
         portPart = portPart.split('/')[0];
 
         if (this.targetPorts.includes(portPart) && ip !== 'Anywhere' && ip !== 'Anywhere (v6)') {
