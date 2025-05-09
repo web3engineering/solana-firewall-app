@@ -14,7 +14,7 @@ export interface UfwRule {
 @Injectable()
 export class UfwService {
   private readonly logger = new Logger(UfwService.name);
-  private readonly targetPorts = ['8899', '11000'];
+  private readonly targetPorts = ['8899', '10000', '11000', '20000'];
 
   // Helper to run UFW commands
   private async runUfwCommand(command: string): Promise<{ stdout: string; stderr: string }> {
