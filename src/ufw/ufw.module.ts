@@ -4,6 +4,7 @@ import { UfwService } from './ufw.service';
 
 @Module({
   controllers: [UfwController],
-  providers: [UfwService]
+  providers: [UfwService],
+  exports: [UfwService]
 })
 export class UfwModule {}
